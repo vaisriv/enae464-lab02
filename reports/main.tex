@@ -257,22 +257,35 @@ Thus, \textbf{the ambient air density during the experiment is}:
 
 \subsection{Data} \label{sec:appendices/data}
 
-% \begin{table}[H]
-%     \centering
-%     \caption{Raw Measurements of Pressure Taps vs. Angle of Attack}
-%     \mintinline{bash}{./data/pressure_vs_theta.csv} \\
-%     \begin{tabular}[c]{|r|l|c|c|c|}\hline
-%         & \( \theta \, \left[\unit{\deg}\right] \) & \( P_{\infty} \, \left[\unit{\cm}\right] \) & \( P_{0} \, \left[\unit{\cm}\right] \) & \( P \, \left[\unit{\cm}\right] \) \\ \hline \hline
-%         \csvreader[late after line = \\ \hline]{../data/pressure_vs_theta.csv}{}{
-%             {\setpadnum{2}\tt\scriptsize\padnum{\thecsvrow}} &
-%             \csvcoli &
-%             \csvcolii &
-%             \csvcoliii &
-%             \csvcoliv
-%         }
-%     \end{tabular}
-%     \label{tab:data/pressure}
-% \end{table}
+\begin{table}[H]
+    \centering
+    \caption{Raw Measurements of Pressure Taps vs. Angle of Attack}
+    \mintinline{bash}{./data/pressure_taps_vs_aoa.csv} \\
+    % \begin{tabular}[c]{|r|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|}\hline
+    %     % & \( \theta \, \left[\unit{\deg}\right] \) & \( P_{\infty} \, \left[\unit{\cm}\right] \) & \( P_{0} \, \left[\unit{\cm}\right] \) & \( P \, \left[\unit{\cm}\right] \) \\ \hline \hline
+    %     \csvreader[late after line = \\ \hline]{../data/pressure_taps_vs_aoa.csv}{}{
+    %         \csvcoli &
+    %         \csvcolii &
+    %         \csvcoliii &
+    %         \csvcoliv &
+    %         \csvcolv &
+    %         \csvcolvi &
+    %         \csvcolvii &
+    %         \csvcolviii &
+    %         \csvcolix &
+    %         \csvcolx &
+    %         \csvcolxi &
+    %         \csvcolxii &
+    %         \csvcolxiii &
+    %         \csvcolxiv &
+    %         \csvcolxv &
+    %         \csvcolxvi &
+    %         \csvcolxvii
+    %     }
+    % \end{tabular}
+    \label{tab:data/pressure}
+\end{table}
+\inputminted{text}{../data/pressure_taps_vs_aoa.csv}
 
 \begin{table}[H]
     \centering
