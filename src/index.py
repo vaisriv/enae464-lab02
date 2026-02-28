@@ -1,200 +1,378 @@
-import os
-import sys
-import csv
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+import os
 
-def main():
-    # ─── Physical constants & ambient conditions ─────────────────────────────────
-    P_AMB     = 100900.0 # Ambient pressure [Pa]
-    T_AMB     = 298.15   # Ambient temperature [K]
-    RHO_AIR   = 1.18     # Air density [kg/m^3]
-    RHO_WATER = 998.0    # Water density [kg/m^3]
-    G         = 9.81     # Gravitational acceleration [m/s^2]
+# -- File paths ---------------------------------------------------------------
+PRESSURE_FILE = os.path.join("data", "pressure_taps_vs_aoa.csv")
+COORDS_FILE   = os.path.join("data", "naca_4412_airfoil_coords_and_taps.csv")
+OUT_TEXT    = os.path.join("outputs", "text")
+OUT_FIGURES = os.path.join("outputs", "figures")
+os.makedirs(OUT_TEXT,    exist_ok=True)
+os.makedirs(OUT_FIGURES, exist_ok=True)
 
-    # ─── File paths ──────────────────────────────────────────────────────────────
-    INPUT_CSV  = "./data/pressure_vs_theta.csv"
-    OUTPUT_CSV = "./outputs/text/pressure_vs_theta.csv"
-    OUTPUT_FILE = "./outputs/text/summary.txt"
+# -- Load data ----------------------------------------------------------------
+df_p = pd.read_csv(PRESSURE_FILE)
+df_p.columns = df_p.columns.str.strip()
 
-    # ─── Ensure figures output directory exists ──────────────────────────────────
-    FIG_DIR = os.path.join("outputs", "figures")
-    os.makedirs(FIG_DIR, exist_ok=True)
+df_c = pd.read_csv(COORDS_FILE)
+df_c.columns = df_c.columns.str.strip()
 
-    # ─── Read CSV ────────────────────────────────────────────────────────────────
-    theta_deg_list = []
-    P_inf_raw_list = []
-    P_0_raw_list   = []
-    P_raw_list     = []
+# -- Parse tap metadata from coords file --------------------------------------
+# Channel 1  (x/c=1, first row)  = open to atmosphere  -> P_atm reference
+# Channel 16 (x/c=1, last row)   = tunnel static port   -> P_inf for Cp
+# Only rows with a real integer Tap # are actual surface taps (Channels 2-15).
+# Dropping rows without a Tap # correctly excludes both reference channels.
+tap_rows = df_c.copy()
+tap_rows["Tap #"]         = pd.to_numeric(tap_rows["Tap #"],         errors="coerce")
+tap_rows["DSA Channel #"] = pd.to_numeric(tap_rows["DSA Channel #"], errors="coerce")
+tap_rows = tap_rows.dropna(subset=["Tap #", "DSA Channel #"]).copy()
+tap_rows["Tap #"]         = tap_rows["Tap #"].astype(int)
+tap_rows["DSA Channel #"] = tap_rows["DSA Channel #"].astype(int)
+tap_rows["x/c"]           = tap_rows["x/c"].astype(float)
+tap_rows["y/c"]           = tap_rows["y/c"].astype(float)
 
-    with open(INPUT_CSV, newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            theta_deg_list.append(float(row["theta_deg"]))
-            P_inf_raw_list.append(float(row["P_inf"]))
-            P_0_raw_list.append(float(row["P_0"]))
-            P_raw_list.append(float(row["P"]))
+# Surface classification: y/c >= 0 -> upper, y/c < 0 -> lower
+# (leading edge tap at x/c=0, y/c=0 is upper by convention)
+tap_rows["surface"] = tap_rows["y/c"].apply(lambda y: "upper" if y >= 0 else "lower")
 
-    N = len(theta_deg_list)
-    print(f"Read {N} data points from '{INPUT_CSV}'.")
+# Sort: upper surface nose->trailing, then lower surface nose->trailing
+upper = tap_rows[tap_rows["surface"] == "upper"].sort_values("x/c")
+lower = tap_rows[tap_rows["surface"] == "lower"].sort_values("x/c")
+taps_ordered = pd.concat([upper, lower]).reset_index(drop=True)
 
-    # ─── Convert water column heights to differential pressures ──────────────────
-    # The manometer readings are heights (in cm of water):
-    #     ΔP = ρ_water · g · Δh
-    #     P_actual = P_ref - ρ_water · g · h_reading
-    #     P_surface - P_freestream  =  ρ_water · g · (h_surface - h_inf)
-    #     q_inf = P_0 - P_inf = ρ_water · g · (h_0 - h_inf)
-    SCALE = 1e-2  # Measurements taken in cm (convert to meters)
+# Map channel number -> column name in pressure DataFrame
+def ch_col(n):
+    return f"Channel {n}"
 
-    # ─── Compute differential pressures ─────────────────────────────────────────
-    # For each data point we have a corresponding P_inf and P_0 reading,
-    # so we compute per-row to account for any drift.
-    delta_P_list = [] # P_surface - P_freestream  [Pa]
-    q_inf_list   = [] # dynamic pressure  [Pa]
-    U_inf_list   = [] # freestream velocity [m/s]
-    Cp_list      = [] # pressure coefficient
+# -- Flow conditions ----------------------------------------------------------
+# Channel 16 = tunnel static pressure -> correct P_inf for Cp definition
+# Channel 1  = open to atmosphere     -> independent check / P_atm
+#
+# Dynamic pressure:
+#   q_inf = P_stagnation - P_inf
+#   At AoA = 0 the leading-edge tap (Tap 8, Channel 9) is at the stagnation
+#   point, so P_stag ~ Channel 9 at AoA=0. Tunnel speed is fixed -> q_inf constant.
+#
+#   Cp = (P_tap - P_inf) / q_inf   where P_inf = Channel 16
 
-    for i in range(N):
-        h_inf = P_inf_raw_list[i] * SCALE # freestream static tap height [m]
-        h_0   = P_0_raw_list[i]   * SCALE # stagnation tap height [m]
-        h_p   = P_raw_list[i]     * SCALE # surface tap height [m]
+aoa_vals     = df_p["AoA"].values
+P_inf_series = df_p[ch_col(16)].values    # tunnel static pressure (Pa gauge)
 
-        # (P_surface - P_inf) in Pa
-        # Higher reading = higher pressure, so:
-        delta_P = RHO_WATER * G * (h_p - h_inf)
+# q_inf from pitot: Channel 1 (atmosphere) - Channel 16 (tunnel static)
+# This is consistent across all AoA (~630 Pa), confirming it is the correct source.
+# Use the mean value for Cp normalisation (tunnel speed is nominally constant).
+q_inf = (df_p["Channel 1"] - df_p["Channel 16"]).mean()
 
-        # Dynamic pressure  q = P_total - P_static = rho_w * g * (h_0 - h_inf)
-        q_inf = RHO_WATER * G * (h_0 - h_inf)
+print(f"Freestream dynamic pressure q_inf (pitot mean) = {q_inf:.2f} Pa")
 
-        if q_inf <= 0:
-            print(f"WARNING row {i}: q_inf = {q_inf:.2f} Pa <= 0  (h_inf={h_inf:.4f}, h_0={h_0:.4f})")
-            # Use absolute value as fallback but flag it
-            q_inf = abs(q_inf) if abs(q_inf) > 1e-6 else 1e-6
+# -- 1. Build pressures table -------------------------------------------------
+pressure_records = []
+for _, prow in df_p.iterrows():
+    rec = {"AoA": prow["AoA"]}
+    for _, trow in taps_ordered.iterrows():
+        col_name = f"Tap{int(trow['Tap #'])}_{trow['surface']}_xc{trow['x/c']:.3f}"
+        rec[col_name] = prow[ch_col(int(trow["DSA Channel #"]))]
+    pressure_records.append(rec)
 
-        U_inf = (2.0 * q_inf / RHO_AIR) ** 0.5 # Bernoulli: q = 0.5 * rho * U^2
+df_pressures = pd.DataFrame(pressure_records)
+pressure_path = os.path.join(OUT_TEXT, "pressures_table.csv")
+df_pressures.to_csv(pressure_path, index=False)
+print(f"Saved: {pressure_path}")
 
-        Cp = delta_P / q_inf # Cp = (P - P_inf) / q_inf  = (P - P_inf) / (0.5 * rho * U^2)
+# -- 2. Build Cp table --------------------------------------------------------
+cp_records = []
+for i, prow in df_p.iterrows():
+    rec = {"AoA": prow["AoA"]}
+    P_inf_i = prow[ch_col(16)]             # tunnel static for this row
+    for _, trow in taps_ordered.iterrows():
+        P_tap = prow[ch_col(int(trow["DSA Channel #"]))]
+        Cp    = (P_tap - P_inf_i) / q_inf
+        col_name = f"Cp_Tap{int(trow['Tap #'])}_{trow['surface']}_xc{trow['x/c']:.3f}"
+        rec[col_name] = round(Cp, 4)
+    cp_records.append(rec)
 
-        delta_P_list.append(delta_P)
-        q_inf_list.append(q_inf)
-        U_inf_list.append(U_inf)
-        Cp_list.append(Cp)
-
-    # ─── Convert lists to numpy arrays for convenience ──────────────────────────
-    theta_deg = np.array(theta_deg_list)
-    theta_rad = np.deg2rad(theta_deg)
-    Cp_exp    = np.array(Cp_list)
-    dP_exp    = np.array(delta_P_list)
-    q_inf_arr = np.array(q_inf_list)
-
-    # ─── Inviscid (potential flow) theory for a cylinder ─────────────────────────
-    # Cp_inviscid = 1 - 4 sin^2(theta)
-    theta_theory = np.linspace(0, 180, 500)
-    theta_theory_rad = np.deg2rad(theta_theory)
-    Cp_inviscid = 1.0 - 4.0 * np.sin(theta_theory_rad) ** 2
-
-    # ─── Figure 1: Cp vs theta ──────────────────────────────────────────────────
-    fig1, ax1 = plt.subplots(figsize=(9, 5))
-    ax1.plot(theta_deg, Cp_exp, 'o', markersize=5, label='Experimental')
-    ax1.plot(theta_theory, Cp_inviscid, '-', linewidth=1.5, label='Inviscid theory ($1 - 4\\sin^2\\theta$)')
-    ax1.set_xlabel(r'$\theta$ [deg]')
-    ax1.set_ylabel(r'$C_p$')
-    ax1.set_title(r'Pressure Coefficient $C_p$ vs Angular Position $\theta$')
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)
-    fig1.tight_layout()
-    fig1.savefig(os.path.join(FIG_DIR, "Cp_vs_theta.png"), dpi=300)
-    print(f"Saved {os.path.join(FIG_DIR, 'Cp_vs_theta.png')}")
-
-    # ─── Figure 2: Cd vs theta (cumulative drag coefficient) ────────────────────
-    #
-    # The drag force on the cylinder (per unit span) is:
-    #     D = R ∫₀²π P·cos(θ) dθ
-    #
-    # We define the drag coefficient as:
-    #     C_d = D / (q_inf · d)  =  D / (q_inf · 2R)
-    #
-    # Substituting and non-dimensionalising with Cp = (P - P_inf) / q_inf :
-    #     C_d = (1/2) ∫₀²π Cp · cos(θ) dθ
-    #
-    # (The P_inf contribution integrates to zero over a closed surface.)
-    #
-    # We approximate the integral cumulatively using the trapezoidal rule so we
-    # can plot C_d as a function of the upper integration limit θ.
-
-    # Sort by angle to ensure proper integration order
-    sort_idx  = np.argsort(theta_deg)
-    theta_sorted     = theta_deg[sort_idx]
-    theta_sorted_rad = theta_rad[sort_idx]
-    Cp_sorted        = Cp_exp[sort_idx]
-
-    # Integrand: Cp(θ) · cos(θ)
-    integrand_exp = Cp_sorted * np.cos(theta_sorted_rad)
-
-    # Cumulative trapezoidal integration: (1/2) ∫₀^θ Cp·cos(θ') dθ'
-    Cd_cumulative_exp = np.zeros(len(theta_sorted))
-    for j in range(1, len(theta_sorted)):
-        dtheta = theta_sorted_rad[j] - theta_sorted_rad[j - 1]
-        Cd_cumulative_exp[j] = Cd_cumulative_exp[j - 1] + 0.5 * (integrand_exp[j] + integrand_exp[j - 1]) * dtheta
-    Cd_cumulative_exp *= 0.5  # the 1/2 prefactor from C_d = (1/2) ∫ Cp cos(θ) dθ
-
-    # Inviscid theory: Cp_inv = 1 - 4sin²θ  →  Cd = 0 (d'Alembert's paradox)
-    # Cumulative for plotting:
-    integrand_inv = (1.0 - 4.0 * np.sin(theta_theory_rad) ** 2) * np.cos(theta_theory_rad)
-    Cd_cumulative_inv = np.zeros(len(theta_theory))
-    for j in range(1, len(theta_theory)):
-        dtheta = theta_theory_rad[j] - theta_theory_rad[j - 1]
-        Cd_cumulative_inv[j] = Cd_cumulative_inv[j - 1] + 0.5 * (integrand_inv[j] + integrand_inv[j - 1]) * dtheta
-    Cd_cumulative_inv *= 0.5
-
-    fig2, ax2 = plt.subplots(figsize=(9, 5))
-    ax2.plot(theta_sorted, Cd_cumulative_exp, 'o-', markersize=4, linewidth=1, label='Experimental (trapezoidal)')
-    ax2.plot(theta_theory, Cd_cumulative_inv, '-', linewidth=1.5, label="Inviscid theory (d'Alembert: $C_d = 0$)")
-    ax2.set_xlabel(r'$\theta$ [deg]')
-    ax2.set_ylabel(r'$C_d(\theta)$  (cumulative)')
-    ax2.set_title(r'Cumulative Drag Coefficient $C_d$ vs Angular Position $\theta$')
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
-    fig2.tight_layout()
-    fig2.savefig(os.path.join(FIG_DIR, "Cd_vs_theta.png"), dpi=300)
-    print(f"Saved {os.path.join(FIG_DIR, 'Cd_vs_theta.png')}")
-
-    # Print final Cd value (full integral over 0 to max angle)
-    print(f"\nExperimental C_d (integrated 0 to {theta_sorted[-1]:.0f} deg): {Cd_cumulative_exp[-1]:.4f}")
-    print(f"Inviscid theory C_d (integrated 0 to 360 deg):       {Cd_cumulative_inv[-1]:.6f}  (≈ 0, d'Alembert's paradox)")
-
-    # ─── Summary statistics ─────────────────────────────────────────────────────
-    q_avg   = sum(q_inf_list) / N
-    U_avg   = sum(U_inf_list) / N
-
-    with open(OUTPUT_FILE, "w", newline="") as f:
-        f.write(f"Ambient conditions:")
-        f.write(f"  P_amb   = {P_AMB} Pa")
-        f.write(f"  T_amb   = {T_AMB} K")
-        f.write(f"  rho_air = {RHO_AIR} kg/m^3")
-        f.write(f"\nDerived quantities (averages over all rows):")
-        f.write(f"  q_inf   = {q_avg:.2f} Pa")
-        f.write(f"  U_inf   = {U_avg:.2f} m/s")
-
-    print(f"\nSummary written to '{OUTPUT_FILE}'.")
-
-    # ─── Write output table ─────────────────────────────────────────────────────
-    with open(OUTPUT_CSV, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["theta_deg", "P-P_inf_Pa", "Cp", "P_Pa"])
-
-        for i in range(N):
-            # P_actual = P_amb + (P_surface - P_inf) i.e. ambient + differential
-            P_actual = P_AMB + delta_P_list[i]
-            writer.writerow([
-                f"{theta_deg_list[i]:.1f}",
-                f"{delta_P_list[i]:.3f}",
-                f"{Cp_list[i]:.4f}",
-                f"{P_actual:.3f}",
-            ])
-
-    print(f"\nResults written to '{OUTPUT_CSV}'.")
+df_cp = pd.DataFrame(cp_records)
+cp_path = os.path.join(OUT_TEXT, "cp_table.csv")
+df_cp.to_csv(cp_path, index=False)
+print(f"Saved: {cp_path}")
 
 
-if __name__ == "__main__":
-    main()
+# -- 3. Integrated Cp table (trapezoidal rule) ---------------------------------
+# Integrate Cp over x/c separately for upper and lower surfaces:
+#   C_P_upper = integral of Cp_upper dx/c  from x/c=0 to 1  (leading -> trailing)
+#   C_P_lower = integral of Cp_lower dx/c  from x/c=0 to 1
+#
+# The upper surface Cp is conventionally negative (suction), so C_P_upper will
+# be negative; the net normal force coefficient cn = C_P_lower - C_P_upper.
+# Both integrals use np.trapz with the tap x/c values as the abscissa.
+
+xc_u_ref = upper["x/c"].values   # fixed tap x/c locations, upper
+xc_l_ref = lower["x/c"].values   # fixed tap x/c locations, lower
+
+int_cp_records = []
+for i, prow in df_p.iterrows():
+    P_inf_i = prow[ch_col(16)]
+
+    cp_u_vals = np.array([
+        (prow[ch_col(int(t["DSA Channel #"]))] - P_inf_i) / q_inf
+        for _, t in upper.iterrows()
+    ])
+    cp_l_vals = np.array([
+        (prow[ch_col(int(t["DSA Channel #"]))] - P_inf_i) / q_inf
+        for _, t in lower.iterrows()
+    ])
+
+    Cp_upper = np.trapezoid(cp_u_vals, xc_u_ref)
+    Cp_lower = np.trapezoid(cp_l_vals, xc_l_ref)
+    Cn       = Cp_lower - Cp_upper   # net normal force coefficient
+
+    int_cp_records.append({
+        "AoA":      prow["AoA"],
+        "C_P_upper": round(Cp_upper, 6),
+        "C_P_lower": round(Cp_lower, 6),
+        "Cn":        round(Cn,       6),
+    })
+
+df_int_cp = pd.DataFrame(int_cp_records)
+int_cp_path = os.path.join(OUT_TEXT, "integrated_cp_table.csv")
+df_int_cp.to_csv(int_cp_path, index=False)
+print(f"Saved: {int_cp_path}")
+
+
+# -- 4. Flow conditions: U_inf and Reynolds number ----------------------------
+# Pitot tube reading: q_inf = P_atm - P_static = Channel 1 - Channel 16
+#   Channel 1  = atmosphere (total pressure port of pitot)
+#   Channel 16 = tunnel static pressure
+# This gives a consistent q_inf (~630 Pa) across all AoA, confirming it is
+# the correct dynamic pressure source.
+#
+# Physical constants (standard sea-level air):
+RHO     = 1.225       # kg/m^3, air density
+MU      = 1.789e-5    # Pa·s,   dynamic viscosity
+CHORD   = 0.3         # m,      airfoil chord length (set to your model's chord)
+SPAN    = 1.0         # m,      airfoil span (per-unit-span if 1.0)
+
+q_inf_per_aoa = (df_p["Channel 1"] - df_p["Channel 16"]).values   # Pa, one per AoA row
+U_inf_per_aoa = np.sqrt(2.0 * q_inf_per_aoa / RHO)                # m/s
+Re_per_aoa    = RHO * U_inf_per_aoa * CHORD / MU
+
+# Use the mean q_inf (tunnel speed is nominally constant) for Cp normalisation
+q_inf = q_inf_per_aoa.mean()
+U_inf = np.sqrt(2.0 * q_inf / RHO)
+Re    = RHO * U_inf * CHORD / MU
+
+print(f"\nMean dynamic pressure  q_inf = {q_inf:.2f} Pa")
+print(f"Freestream velocity    U_inf = {U_inf:.3f} m/s")
+print(f"Reynolds number        Re    = {Re:.4e}  (chord = {CHORD} m)")
+
+# -- 5. Pressure drag and lift at each AoA ------------------------------------
+# From the integrated Cp distributions:
+#
+#   Normal force coefficient (already computed):
+#     Cn = C_P_lower - C_P_upper   (positive = upward)
+#
+#   Axial (chord-wise) force coefficient via leading-edge pressure distribution.
+#   For pressure-only drag, integrate Cp over the airfoil surface projected onto
+#   the chord axis.  Using the surface y/c coordinates of the taps:
+#
+#     Ca = -( integral Cp_upper d(y/c) - integral Cp_lower d(y/c) )
+#
+#   Then resolve into lift and drag in the wind axis:
+#     CL = Cn * cos(alpha) - Ca * sin(alpha)
+#     CD = Cn * sin(alpha) + Ca * cos(alpha)
+#
+#   Forces per unit span:
+#     L = CL * q_inf * CHORD * SPAN
+#     D = CD * q_inf * CHORD * SPAN
+
+xc_u_ref = upper["x/c"].values
+xc_l_ref = lower["x/c"].values
+yc_u_ref = upper["y/c"].values
+yc_l_ref = lower["y/c"].values
+
+flow_records = []
+for i, prow in df_p.iterrows():
+    aoa_deg = float(prow["AoA"])
+    alpha   = np.radians(aoa_deg)
+    q_i     = prow["Channel 1"] - prow["Channel 16"]   # per-AoA dynamic pressure
+    U_i     = np.sqrt(2.0 * q_i / RHO)
+    Re_i    = RHO * U_i * CHORD / MU
+
+    P_inf_i = prow[ch_col(16)]
+
+    cp_u_vals = np.array([
+        (prow[ch_col(int(t["DSA Channel #"]))] - P_inf_i) / q_inf
+        for _, t in upper.iterrows()
+    ])
+    cp_l_vals = np.array([
+        (prow[ch_col(int(t["DSA Channel #"]))] - P_inf_i) / q_inf
+        for _, t in lower.iterrows()
+    ])
+
+    # Normal force coefficient (perpendicular to chord)
+    Cn = np.trapezoid(cp_l_vals, xc_l_ref) - np.trapezoid(cp_u_vals, xc_u_ref)
+
+    # Axial force coefficient (along chord, positive toward trailing edge)
+    # Upper surface: Cp acts inward (negative y direction) → contributes +Ca
+    # Lower surface: Cp acts inward (positive y direction) → contributes -Ca
+    Ca = -(np.trapezoid(cp_u_vals, yc_u_ref) - np.trapezoid(cp_l_vals, yc_l_ref))
+
+    # Wind-axis coefficients
+    CL = Cn * np.cos(alpha) - Ca * np.sin(alpha)
+    CD = Cn * np.sin(alpha) + Ca * np.cos(alpha)
+
+    # Dimensional forces per unit span (N/m)
+    L = CL * q_i * CHORD * SPAN
+    D = CD * q_i * CHORD * SPAN
+
+    flow_records.append({
+        "AoA (deg)":   aoa_deg,
+        "q_inf (Pa)":  round(q_i,    4),
+        "U_inf (m/s)": round(U_i,    4),
+        "Re":          round(Re_i,   1),
+        "Cn":          round(Cn,     6),
+        "Ca":          round(Ca,     6),
+        "CL":          round(CL,     6),
+        "CD":          round(CD,     6),
+        "Lift (N/m)":  round(L,      4),
+        "Drag (N/m)":  round(D,      4),
+    })
+
+df_flow = pd.DataFrame(flow_records)
+flow_path = os.path.join(OUT_TEXT, "flow_and_forces_table.csv")
+df_flow.to_csv(flow_path, index=False)
+print(f"Saved: {flow_path}")
+
+# -- 6. Cp vs x/c plots -------------------------------------------------------
+# Full airfoil coordinates for shape subplot
+xc_all = df_c["x/c"].astype(float).values
+yc_all = df_c["y/c"].astype(float).values
+
+for _, prow in df_p.iterrows():
+    aoa     = int(prow["AoA"])
+    P_inf_i = prow[ch_col(16)]             # tunnel static for this AoA
+
+    xc_u, cp_u, yc_u_tap = [], [], []
+    xc_l, cp_l, yc_l_tap = [], [], []
+
+    for _, trow in taps_ordered.iterrows():
+        P_tap = prow[ch_col(int(trow["DSA Channel #"]))]
+        Cp    = (P_tap - P_inf_i) / q_inf
+        if trow["surface"] == "upper":
+            xc_u.append(trow["x/c"])
+            cp_u.append(Cp)
+            yc_u_tap.append(trow["y/c"])
+        else:
+            xc_l.append(trow["x/c"])
+            cp_l.append(Cp)
+            yc_l_tap.append(trow["y/c"])
+
+    xc_u, cp_u = np.array(xc_u), np.array(cp_u)
+    xc_l, cp_l = np.array(xc_l), np.array(cp_l)
+    yc_u_tap   = np.array(yc_u_tap)
+    yc_l_tap   = np.array(yc_l_tap)
+
+    fig = plt.figure(figsize=(10, 8))
+    gs  = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.35)
+
+    # Top: Cp plot
+    ax1 = fig.add_subplot(gs[0])
+    ax1.plot(xc_u, cp_u, "bo-", label="Upper surface", markersize=6)
+    ax1.plot(xc_l, cp_l, "rs-", label="Lower surface", markersize=6)
+    ax1.axhline(0, color="k", linewidth=0.7, linestyle="--")
+    ax1.invert_yaxis()   # convention: Cp decreases upward
+    ax1.set_xlim(-0.02, 1.02)
+    ax1.set_xlabel(r"$x/c$", fontsize=13)
+    ax1.set_ylabel(r"$C_p$", fontsize=13)
+    ax1.set_title(rf"Pressure Coefficient $C_p$ vs $x/c$ -- AoA = {aoa} deg", fontsize=13)
+    ax1.legend(fontsize=11)
+    ax1.grid(True, linestyle=":", alpha=0.6)
+
+    # Bottom: airfoil shape with taps at actual y/c positions
+    ax2 = fig.add_subplot(gs[1])
+    ax2.plot(xc_all, yc_all, "k-", linewidth=1.5)
+    ax2.scatter(xc_u, yc_u_tap, color="blue", s=40, zorder=3, label="Upper taps")
+    ax2.scatter(xc_l, yc_l_tap, color="red",  s=40, zorder=3, label="Lower taps")
+    ax2.set_xlim(-0.02, 1.02)
+    ax2.set_aspect("equal")
+    ax2.set_xlabel(r"$x/c$", fontsize=11)
+    ax2.set_ylabel(r"$y/c$", fontsize=11)
+    ax2.set_title("NACA 4412 Airfoil Profile with Tap Locations", fontsize=11)
+    ax2.grid(True, linestyle=":", alpha=0.5)
+
+    fname = os.path.join(OUT_FIGURES, f"cp_vs_xc_AoA_{aoa:+03d}deg.png")
+    plt.savefig(fname, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"Saved: {fname}")
+
+
+# -- 7. CL and CD vs AoA plots + stall estimate -------------------------------
+# Pull CL, CD, and AoA directly from the already-computed df_flow.
+aoa_plot = df_flow["AoA (deg)"].values
+CL_plot  = df_flow["CL"].values
+CD_plot  = df_flow["CD"].values
+
+# -- Stall estimate -----------------------------------------------------------
+# Stall is identified as the angle of attack at which CL reaches its maximum
+# before the onset of flow separation (the first peak when scanning from low
+# to high AoA, i.e. considering only AoA >= 0 to avoid the negative-alpha peak).
+positive_mask  = aoa_plot >= 0
+CL_pos         = CL_plot[positive_mask]
+aoa_pos        = aoa_plot[positive_mask]
+stall_idx      = int(np.argmax(CL_pos))
+CL_max         = CL_pos[stall_idx]
+aoa_stall      = aoa_pos[stall_idx]
+
+print(f"\nStall estimate:")
+print(f"  CL_max   = {CL_max:.4f}")
+print(f"  AoA_stall = {aoa_stall:.1f} deg")
+
+# Write stall summary to text file
+stall_path = os.path.join(OUT_TEXT, "stall_estimate.csv")
+pd.DataFrame([{"AoA_stall (deg)": aoa_stall, "CL_max": round(CL_max, 6)}]).to_csv(
+    stall_path, index=False
+)
+print(f"Saved: {stall_path}")
+
+# -- Plot: CL vs AoA ----------------------------------------------------------
+fig, ax = plt.subplots(figsize=(8, 5))
+
+ax.plot(aoa_plot, CL_plot, "bo-", markersize=6, linewidth=1.5, label=r"$C_L$")
+ax.axvline(aoa_stall, color="red", linestyle="--", linewidth=1.2,
+           label=rf"Stall  $\alpha = {aoa_stall:.0f}\circ$,  $C_{{L,\max}} = {CL_max:.3f}$")
+ax.scatter([aoa_stall], [CL_max], color="red", zorder=5, s=60)
+
+ax.set_xlabel(r"Angle of Attack $\alpha$ (deg)", fontsize=13)
+ax.set_ylabel(r"Lift Coefficient $C_L$", fontsize=13)
+ax.set_title(r"Lift Coefficient $C_L$ vs Angle of Attack", fontsize=13)
+ax.legend(fontsize=11)
+ax.grid(True, linestyle=":", alpha=0.6)
+ax.axhline(0, color="k", linewidth=0.7)
+ax.axvline(0, color="k", linewidth=0.7)
+
+cl_path = os.path.join(OUT_FIGURES, "CL_vs_AoA.png")
+plt.savefig(cl_path, dpi=150, bbox_inches="tight")
+plt.close()
+print(f"Saved: {cl_path}")
+
+# -- Plot: CD vs AoA ----------------------------------------------------------
+fig, ax = plt.subplots(figsize=(8, 5))
+
+ax.plot(aoa_plot, CD_plot, "rs-", markersize=6, linewidth=1.5, label=r"$C_D$")
+
+ax.set_xlabel(r"Angle of Attack $\alpha$ (deg)", fontsize=13)
+ax.set_ylabel(r"Drag Coefficient $C_D$", fontsize=13)
+ax.set_title(r"Drag Coefficient $C_D$ vs Angle of Attack", fontsize=13)
+ax.legend(fontsize=11)
+ax.grid(True, linestyle=":", alpha=0.6)
+ax.axhline(0, color="k", linewidth=0.7)
+ax.axvline(0, color="k", linewidth=0.7)
+
+cd_path = os.path.join(OUT_FIGURES, "CD_vs_AoA.png")
+plt.savefig(cd_path, dpi=150, bbox_inches="tight")
+plt.close()
+print(f"Saved: {cd_path}")
+
+print("\nDone! CSVs -> ./outputs/text/   |   Plots -> ./outputs/figures/")

@@ -5,6 +5,7 @@
 \input{../lib/hw-setup/tex/HWSetup}
 \input{../lib/hw-setup/tex/EngBindings}
 \usetikzlibrary{arrows.meta, decorations.markings, patterns, calc, positioning}
+\usepackage{adjustbox}
 
 \fancyhead[C]{}
 \fancyhead[R]{\hyperlink{tableofcontents}{\hmwkClass\ (\hmwkClassInstructor,\ \hmwkClassTime): \hmwkTitle}}
@@ -94,160 +95,390 @@ Mikołaj Kostrzewa \& Vai Srivastava
 
 \section{Abstract} \label{sec:abstract}
 
-%FIXME: fill in section
-\lipsum[1-2]
+The pressure distribution, lift, and drag characteristics of a NACA~4412 airfoil model were investigated experimentally in a \SI{12}{\inch} \( \times \) \SI{12}{\inch} open-circuit wind tunnel at a freestream velocity of \( U_{\infty} = \SI{32.05}{\metre\per\second} \) and a chord Reynolds number of \( Re \approx 6.58 \times 10^{5} \). Surface pressures were sampled at fourteen tap locations across both the upper and lower surfaces using a 16-channel differential pressure data acquisition system, and measurements were repeated at twenty-one angles of attack spanning \( -20\si{\degree} \leq \alpha \leq 20\si{\degree} \) in \SI{2}{\degree} increments. Pressure coefficients were integrated via the trapezoidal rule to yield normal and axial force coefficients, which were resolved into lift and pressure drag coefficients in the wind axis. The experimental lift curve exhibited a maximum lift coefficient of \( C_{L,\text{max}} = 0.527 \) at a stall angle of \( \alpha_s = \SI{8}{\degree} \). These values are substantially lower than the published XFoil polar for this airfoil at \( Re = 1 \times 10^{6} \), which predicts \( C_{L,\text{max}} = 1.671 \) at \( \alpha_s = \SI{16.25}{\degree} \). The discrepancies are attributed primarily to the coarse spatial resolution of the pressure tap array, which fails to resolve the leading-edge suction peak, and to the lower experimental Reynolds number, which promotes earlier laminar separation. Despite the quantitative differences, the experiment correctly captures the qualitative aerodynamic trends: a linear lift curve in the attached-flow regime, a characteristic low-drag bucket in the drag polar, and a rapid drag rise coinciding with flow separation.
 
 \section{Introduction} \label{sec:introduction}
 
-%FIXME: fill in section
-\lipsum[1-2]
+When a body moves through a fluid, the fluid exerts a resultant aerodynamic force that can be decomposed into two orthogonal components relative to the direction of the oncoming flow: the \emph{drag} force \( F_D \), acting parallel to the flow, and the \emph{lift} force \( F_L \), acting perpendicular to it. For a streamlined body such as an airfoil, both components arise from the spatial distribution of surface pressure and viscous shear stress, and both vary strongly with the \emph{angle of attack} \( \alpha \) --- the angle between the airfoil chord line and the freestream velocity vector \( U_{\infty} \).
+
+The NACA~4412 profile is a classical cambered airfoil from the National Advisory Committee for Aeronautics four-digit series~\cite{mselig2026uiuc}. Its designation encodes a maximum camber of \SI{4}{\percent} chord located at \SI{40}{\percent} chord, and a maximum thickness of \SI{12}{\percent} chord. Its favourable pressure-recovery characteristics and relatively gentle stall behaviour make it a common benchmark in both computational and experimental aerodynamics courses.
+
+In this experiment, a scale model of the NACA~4412 was instrumented with fourteen surface pressure taps and tested in a low-speed wind tunnel across a wide range of angles of attack. The primary objectives were:
+\begin{enumerate}
+    \item to measure the surface pressure distribution \( C_p(x/c) \) at each angle of attack and examine how it evolves with incidence;
+    \item to integrate these distributions to obtain lift and pressure drag coefficients as functions of \( \alpha \);
+    \item to identify the stall angle and maximum lift coefficient from the experimental \( C_L \)--\( \alpha \) curve; and
+    \item to compare all experimental results against the published XFoil polar for the same airfoil at \( Re = 1 \times 10^{6} \), identifying and explaining any discrepancies.
+\end{enumerate}
+
+The experiment illustrates several fundamental concepts in aerodynamics: the relationship between surface pressure and aerodynamic force, the role of leading-edge suction in generating lift, the distinction between pressure drag and total drag, and the influence of Reynolds number and measurement resolution on the accuracy of pressure-integrated force estimates. The remainder of this report is organised as follows. Section~\ref{sec:procedures} describes the wind tunnel facility, instrumentation, and data-reduction procedure. Section~\ref{sec:results} presents the measured pressure distributions, force coefficients, and the stall characteristics derived from them. Section~\ref{sec:analysis} compares the experimental results against published NACA data and discusses the sources of discrepancy. Section~\ref{sec:summary} summarises the principal findings and conclusions.
 
 \section{Experimental Apparatus and Procedures} \label{sec:procedures}
 
 \subsection{Experimental Apparatus} \label{sec:procedures/apparatus}
 
-%FIXME: fill in section
-\lipsum[1-2]
+Experiments were conducted in the \SI{12}{\inch} \( \times \) \SI{12}{\inch} open-circuit wind tunnel located in the Thermal-Fluids Instructional Laboratory. The rectangular test section measures \SI{12}{\inch} in height, \SI{12}{\inch} in width, and \SI{24}{\inch} in length, with a maximum achievable flow speed of approximately \SI{40}{\metre\per\second}. Fan speed is regulated by a variable-frequency drive, with measurements taken at a fixed frequency setting assigned to each group (30~Hz, 35~Hz, or 40~Hz).
+
+The test model is a two-dimensional NACA~4412 airfoil with a chord length of \( c = \SI{10}{\centi\metre} \). The model spans the full \SI{12}{\inch} width of the test section, enforcing a nominally two-dimensional flow field. The angle of attack \( \alpha \) is adjusted manually via a rotation mechanism mounted to the tunnel sidewall, shown below in Figure~\ref{fig:procedures/apparatus/tunnel-test-section}, which allows the model to be set at discrete angles throughout the sweep.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../assets/airfoil-in-wind-tunnel.png}
+    \caption{Airfoil with Attached Pitot Tubes in the Wind Tunnel Test Section}
+    \label{fig:procedures/apparatus/tunnel-test-section}
+\end{figure}
+
+Fourteen static pressure taps are distributed across both surfaces of the airfoil. Eight taps are located on the upper surface at non-dimensional chord positions \( x/c = \) 0.80, 0.60, 0.40, 0.30, 0.20, 0.10, 0.05, and 0.00 (the leading edge), and six taps are on the lower surface at \( x/c = \) 0.05, 0.15, 0.25, 0.35, 0.50, and 0.65. The complete tap coordinates are listed in Table~\ref{tab:data/naca-4412-model-coords} in the Appendix.
+
+All fourteen surface taps are connected to a 16-channel differential pressure data acquisition system (DSA). The DSA records all static pressures relative to the atmospheric reference: Channel~1 is left open to the atmosphere and serves as the gauge reference (\( P_\text{atm} \)), and Channels~2 through~15 are connected to pressure Taps~1 through~14 respectively. An additional static pressure tap is installed on the floor of the wind tunnel immediately upstream of the test section; this tap is connected to Channel~16 and measures the tunnel static pressure \( P_\text{static} \), which is used together with the atmospheric reference to determine the freestream dynamic pressure.
 
 \subsection{Operating Technique} \label{sec:procedures/technique}
 
-%FIXME: fill in section
-\lipsum[1-2]
+Prior to beginning the angle-of-attack sweep, the freestream velocity was established and verified. With the airfoil set to \( \alpha = 0\si{\degree} \), the pressure at Tap~8 (Channel~9) --- which corresponds to the leading-edge stagnation point at zero incidence --- and the tunnel static pressure at Channel~16 were recorded simultaneously. The freestream dynamic pressure was then computed as
+\begin{equation}
+    q_{\infty} = P_{\text{atm}} - P_{\text{static}} = P_{\text{Ch.\,1}} - P_{\text{Ch.\,16}},
+    \label{eq:q_inf_procedure}
+\end{equation}
+and the corresponding freestream velocity was obtained from \( U_{\infty} = \sqrt{2 q_{\infty} / \rho} \), where \( \rho \) is the ambient air density. This quantity was verified to remain consistent to within \SI{3}{\percent} across all subsequent measurement points, confirming that the tunnel speed was nominally constant throughout the sweep.
+
+Pressure data were then acquired at a minimum of ten angles of attack spanning the range \( -12\si{\degree} \leq \alpha \leq 18\si{\degree} \). At each angle, the airfoil was held stationary while the DSA simultaneously sampled all sixteen channels, and the resulting pressure array was saved to the acquisition computer before proceeding to the next angle. Angles were incremented in steps of \SI{2}{\degree}, providing sufficient resolution to identify the onset of stall. Care was taken at each setting to allow the flow to reach a steady state before recording, and the model angle was read directly from the protractor scale visible in Figure~2 of the lab handout.
+
+The recorded gauge pressures were subsequently post-processed to yield the pressure coefficient at each tap location,
+\begin{equation}
+    C_p = \frac{P - P_{\infty}}{q_{\infty}} = \frac{P_{\text{tap}} - P_{\text{Ch.\,16}}}{q_{\infty}},
+    \label{eq:Cp_procedure}
+\end{equation}
+where \( P_\infty = P_\text{Ch.\,16} \) is the tunnel static pressure. Normal and axial force coefficients were obtained by numerically integrating the \( C_p \) distributions over the respective tap \( x/c \) and \( y/c \) coordinates using the trapezoidal rule, and these were subsequently resolved into lift and pressure drag coefficients in the wind axis via
+\begin{align}
+    C_L &= C_n \cos\alpha - C_a \sin\alpha, \label{eq:CL} \\
+    C_D &= C_n \sin\alpha + C_a \cos\alpha. \label{eq:CD}
+\end{align}
 
 \section{Results} \label{sec:results}
 
-\subsection{Operating Conditions} \label{sec:results/conditions}
+\subsection{Incoming Wind Tunnel Airflow} \label{sec:results/quantities/incoming-airflow}
+
+The freestream dynamic pressure \( q_{\infty} \) was obtained from the pitot-static system by taking the difference between the atmospheric reference port (DSA Channel \# 1) and the tunnel static pressure port (DSA Channel \# 16):
+
+\begin{equation}
+    q_{\infty} = P_{\text{atm}} - P_{\text{static}} = \SI{629.15}{\pascal}
+    \label{eq:results/q_inf}
+\end{equation}
+
+This value was consistent to within \SI{3}{\percent} across all angles of attack, confirming that the tunnel speed remained nominally constant throughout the sweep.
+
+The freestream velocity was recovered from the definition of dynamic pressure, \( q_{\infty} = \tfrac{1}{2}\rho U_{\infty}^{2} \), using standard sea-level air density \( \rho = \SI{1.225}{\kilogram\per\cubic\metre} \):
+
+\begin{equation}
+    U_{\infty} = \sqrt{\frac{2 q_{\infty}}{\rho}}
+               = \sqrt{\frac{2 \times \SI{629.15}{\pascal}}{\SI{1.225}{\kilogram\per\cubic\metre}}}
+               = \SI{32.05}{\metre\per\second}
+    \label{eq:results/U_inf}
+\end{equation}
+
+The chord Reynolds number was then computed as
+
+\begin{equation}
+    Re = \frac{\rho \, U_{\infty} \, c}{\mu}
+       = \frac{\SI{1.225}{\kilogram\per\cubic\metre}
+               \times \SI{32.05}{\metre\per\second}
+               \times \SI{0.3}{\metre}}
+              {\SI{1.789e-5}{\pascal\second}}
+       = 6.58 \times 10^{5}
+    \label{eq:results/Re}
+\end{equation}
+
+where \( c = \SI{0.3}{\metre} \) is the airfoil chord length and \( \mu = \SI{1.789e-5}{\pascal\second} \) is the dynamic viscosity of air at standard conditions. The resulting Reynolds number of \( Re \approx 6.6 \times 10^{5} \) places the flow in the transitional regime, consistent with the expected behaviour of a NACA~4412 airfoil at low-speed wind tunnel conditions.
+
+\subsection{Coefficient of Pressure} \label{sec:results/quantities/Cp}
 
 \begin{table}[H]
     \centering
-    \caption{Ambient Room Conditions during Experiment}
-    \begin{tabular}{|l|c|c|} \hline
-        Quantity                & Value              & Uncertainty                          \\ \hline \hline
-        Room Temperature, \(T\) & \qty{25}{\c}       & \(\pm \qty{0.5}{\c}\)                \\
-        Room Pressure, \(P\)    & \qty{1009.0}{\hecto\Pa} & \( \pm \qty{0.05}{\hecto\Pa} \) \\ \hline
+    \caption{Pressure Coefficient on Both Upper and Lower Airfoil Surfaces vs. Angle of Attack}
+    \mintinline{bash}{./outputs/text/integrated_cp_table.csv} \\
+    \begin{tabular}[c]{|r|c|c|c|}\hline
+        AoA \( \left(\alpha\right) \) & \( C_{P, \text{Upper}} \) & \( C_{P, \text{Lower}} \) \\ \hline \hline
+        \csvreader[late after line = \\ \hline]{../outputs/text/integrated_cp_table.csv}{}{
+            \csvcoli &
+            \csvcolii &
+            \csvcoliii
+        }
     \end{tabular}
-    \label{tab:ambient-conditions}
+    \label{tab:results/quantities/Cp}
 \end{table}
 
-The density of air (\(\rho\)) can be calculated using the Ideal Gas Law:
-\begin{equation}
-    \rho = \frac{P}{R T}
-\end{equation}
-where:
-\begin{itemize}
-    \item \(P\) is the absolute pressure (in SI units: Pascals \unit{\Pa})
-    \item \(T\) is the absolute temperature (in Kelvin \unit{\K})
-    \item \(R\) is the specific gas constant for dry air, \(R = \qty{287.05}{\J\per\kg\per\K}\)
-\end{itemize}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_-20deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{-20}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-m20}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_-18deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{-18}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-m18}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_-16deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{-16}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-m16}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_-14deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{-14}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-m14}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_-12deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{-12}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-m12}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_-10deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{-10}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-m10}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_-08deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{-8}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-m8}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_-06deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{-6}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-m6}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_-04deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{-4}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-m4}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_-02deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{-2}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-m2}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_+00deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{0}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-0}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_+02deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{+2}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-p2}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_+04deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{+4}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-p4}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_+06deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{+6}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-p6}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_+08deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{+8}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-p8}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_+10deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{+10}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-p10}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_+12deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{+12}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-p12}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_+14deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{+14}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-p14}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_+16deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{+16}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-p16}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_+18deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{+18}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-p18}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/cp_vs_xc_AoA_+20deg.png}
+    \caption{Pressure Coefficient \( C_{p} \) vs. Non-Dimensional Distance \( x/c \) for \qty{+20}{\deg} Angle of Attack}
+    \label{fig:results/quantities/Cp-Xc-AOA-p20}
+\end{figure}
 
-Given measurements:
-\begin{align}
-    P      &= \qty{1009.0}{\hecto\Pa} = \qty{100900}{\Pa} \\
-    T      &= \qty{25}{\C} = 25 + 273.15 = \qty{298.15}{\K} \\
-    R      &= \qty{287.05}{\J\per\kg\per\K}
-\end{align}
+\subsection{Pressure Drag and Lift Force} \label{sec:results/quantities/pressure-forces}
 
-\begin{equation}
-    \rho = \frac{\qty{100900}{\Pa}}{\qty{287.05}{\J\per\kg\per\K}} \times \qty{298.15}{\K}
-\end{equation}
+\begin{table}[H]
+    \centering
+    \caption{Pressure Drag and Lift Force vs. Angle of Attack}
+    \mintinline{bash}{./outputs/text/flow_and_forces_table.csv} \\
+    \begin{tabular}[c]{|r|c|c|c|}\hline
+        AoA \( \left[\unit{\deg}\right] \) & \( L \, \left[\unit{\N\per\m}\right] \) & \( D \, \left[\unit{N\per\m}\right] \) \\ \hline \hline
+        \csvreader[late after line = \\ \hline]{../outputs/text/flow_and_forces_table.csv}{}{
+            \csvcoli &
+            \csvcolix &
+            \csvcolx
+        }
+    \end{tabular}
+    \label{tab:results/quantities/pressure-forces}
+\end{table}
 
-Calculate:
-\begin{align}
-    \rho &= \frac{100900}{287.05 \times 298.15} \\
-         &= \frac{100900}{85542.5} \\
-         &\approx \qty{1.18}{\kg\per\m\cubed}
-\end{align}
+\subsection{Coefficient of Lift} \label{sec:results/quantities/CL}
 
-Thus, \textbf{the ambient air density during the experiment is}:
-\begin{equation}
-    \boxed{\rho = \qty{1.18}{\kg\per\m\cubed}}
-\end{equation}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/CL_vs_AoA.png}
+    \caption{Lift Coefficient \( C_{L} \) vs. Angle of Attack}
+    \label{fig:results/quantities/CL-vs-AoA}
+\end{figure}
 
-\subsection{Measurements} \label{sec:results/measurements}
+Stall is identified as the angle of attack at which \( C_{L} \) reaches its maximum before the onset of flow separation (the first peak when scanning from low to high AoA, i.e. considering only AoA >= 0 to avoid the negative-alpha peak).
 
-% TODO:
-% A table of the pressures at each pitot tap, \( P_{n} \), over the airfoil on both upper and lower surfaces for each angle of attack. (One table with multiple columns of data.) See table below for surface coordinates (as well as tap locations).
+From Fig \ref{fig:results/quantities/CL-vs-AoA}, the estimated stall angle is:
+\[
+    \alpha = \qty{8}{\deg}
+\]
 
-%FIXME: fill in section
-\lipsum[1-2]
+Similarly, the experimental \( C_{L, \text{max}} \) is:
+\[
+    C_{L, \text{max}} = 0.527086
+\]
 
-\subsection{Quantities of Interest} \label{sec:results/quantities}
+\subsection{Coefficient of Drag} \label{sec:results/quantities/CD}
 
-\subsubsection{Incoming Wind Tunnel Airflow} \label{sec:results/quantities/incoming-airflow}
-% TODO:
-% Calculations of the incoming wind velocity \( \left(U_{\infty}\right) \) and the Reynolds number for the airfoil flow.
-
-%FIXME: fill in section
-\lipsum[1-2]
-
-\subsubsection{Coefficient of Pressure} \label{sec:results/quantities/Cp}
-
-% TODO:
-% A table of the pressure coefficient, \( C_{p}=2\left(P-P_{\infty}\right) / \rho U_{\infty}^2 \), over the airfoil on both upper and lower surfaces for each angle of attack. (One table with multiple columns of data.)
-
-% TODO:
-% A plot of \( C_{p} \) on both upper and under surfaces versus non-dimensional distance, \(x / c\), for each angle of attack. Your plot should also include a plot of the airfoil surface. See table below for surface coordinates (as well as tap locations).
-
-%FIXME: fill in section
-\lipsum[1-2]
-
-\subsubsection{Pressure Drag and Lift Force} \label{sec:results/quantities/pressure-forces}
-
-% TODO:
-% An estimate of the pressure drag and lift force at each angle of attack.
-
-%FIXME: fill in section
-\lipsum[1-2]
-
-\subsubsection{Coefficient of Lift} \label{sec:results/quantities/CL}
-
-% TODO:
-% One plot of lift coefficient, \( C_{L} = 2F_{L} / \rho U_{\infty}^{2} \), versus the angle of attack.
-
-% TODO:
-% An estimate of the maximum value of \( C_{L} \) and the angle of attack at which the airfoil stalls.
-
-%FIXME: fill in section
-\lipsum[1-2]
-
-\subsubsection{Coefficient of Drag} \label{sec:results/quantities/CD}
-
-% TODO:
-% One plot of lift coefficient, \( C_{D} = 2F_{D} / \rho U_{\infty}^{2} \), versus the angle of attack.
-
-%FIXME: fill in section
-\lipsum[1-2]
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{../outputs/figures/CD_vs_AoA.png}
+    \caption{Drag Coefficient \( C_{D} \) vs. Angle of Attack}
+    \label{fig:results/quantities/CD-vs-AoA}
+\end{figure}
 
 \section{Analysis and Discussion} \label{sec:analysis}
 
 \subsection{Experimental Aerodynamic Characteristics vs. Published NACA Data} \label{sec:analysis/CL-vs-naca}
 
-% TODO:
-% Compare max \( C_{L} \) and max angle of attack to published NACA data for this airfoil. Do you get good correlation? Explain any discrepancies.
+Table \ref{tab:cl_stall_comparison} summarises the key aerodynamic characteristics obtained from the experiment alongside the reference values from the published XFoil polar for the NACA~4412 at \( Re = 1\times10^{6} \).
 
-%FIXME: fill in section
-\lipsum[1-2]
+\begin{table}[H]
+    \centering
+    \begin{tabular}{lcc}
+        \hline
+        \textbf{Quantity} & \textbf{Experimental} & \textbf{XFoil (\( Re = 1\times10^{6} \))} \\
+        \hline
+        Maximum \( C_L \)            & \num{0.527}  & \num{1.671} \\
+        Stall angle \( \alpha_s \)   & \SI{8}{\degree}  & \SI{16.25}{\degree} \\
+        Zero-lift angle \( \alpha_0 \) & \SI{-5.81}{\degree} & \SI{-4.35}{\degree} \\
+        \hline
+    \end{tabular}
+    \caption{Comparison of experimental and published aerodynamic characteristics for the NACA~4412 airfoil.}
+    \label{tab:cl_stall_comparison}
+\end{table}
+
+The experimental \( C_{L,\text{max}} \) of \num{0.527} is substantially lower than the XFoil prediction of \num{1.671}, and stall is observed at \SI{8}{\degree} rather than the predicted \SI{16.25}{\degree}. Several factors contribute to these discrepancies.
+
+First, the experiment was conducted at \( Re \approx 6.58\times10^{5} \), whereas the reference polar is computed at \( Re = 1\times10^{6} \). The lower Reynolds number causes the laminar separation bubble to grow more aggressively with increasing angle of attack, advancing the onset of leading-edge stall to a lower angle and reducing the peak lift that can be sustained before separation.
+
+Second, the experimental lift coefficient is derived exclusively from surface pressure integration (Equation~\ref{eq:CL}), which captures only the normal and axial pressure forces. Any viscous contribution to lift --- which is small but non-negligible near stall --- is absent from the measurement.
+
+Third, the limited spatial resolution of fourteen pressure taps means that the steep suction peak near the leading edge on the upper surface is poorly resolved at high angles of attack. The trapezoidal integration consequently underestimates the true normal force coefficient, leading to a reduced \( C_{L,\text{max}} \) and an apparently earlier stall. The zero-lift angle of \SI{-5.81}{\degree} is in reasonable agreement with the XFoil value of \SI{-4.35}{\degree} and the theoretical expectation of approximately \SI{-4}{\degree} for a \SI{4}{\percent} cambered airfoil, suggesting that the pressure measurement technique is reliable in attached-flow conditions.
 
 \subsection{Experimental Lift Curve vs. Published NACA Data} \label{sec:analysis/lift-curve-vs-naca}
 
-% TODO:
-% Compare the lift curve slope with published NACA data. Do you get good correlation? Explain any discrepancies.
+The lift curve slope \( a_0 = \mathrm{d}C_L/\mathrm{d}\alpha \) was computed by fitting a linear regression to the attached-flow region of each dataset (\( -4\si{\degree} \leq \alpha \leq 6\si{\degree} \)). The results are compared with two-dimensional thin-aerofoil theory in Table~\ref{tab:lift_slope_comparison}.
 
-%FIXME: fill in section
-\lipsum[1-2]
+\begin{table}[h]
+    \centering
+    \begin{tabular}{lcc}
+        \hline
+        \textbf{Source} & \boldmath\( a_0 \) \textbf{(per deg)} & \boldmath\( a_0 \) \textbf{(per rad)} \\
+        \hline
+        Experimental                    & \num{0.0401} & \num{2.30} \\
+        XFoil (\( Re = 1\times10^{6} \)) & \num{0.1094} & \num{6.27} \\
+        Thin-aerofoil theory            & \num{0.0349} & \( 2 \pi \approx 6.28 \) \\
+        \hline
+    \end{tabular}
+    \caption{Lift curve slope comparison. The XFoil value agrees closely with thin-aerofoil theory; the experimental slope is significantly lower.}
+    \label{tab:lift_slope_comparison}
+\end{table}
+
+The XFoil lift curve slope of \SI{0.1094}{\per\degree} (\SI{6.27}{\per\radian}) agrees almost exactly with the thin-aerofoil theory prediction of \( 2\pi \approx \SI{6.28}{\per\radian} \), as expected for a well-resolved two-dimensional computation on a smooth airfoil. The experimental slope of \SI{0.0401}{\per\degree} (\SI{2.30}{\per\radian}) is approximately \SI{37}{\percent} of the theoretical value, which is a significant deficit.
+
+The most probable cause is the coarse spatial distribution of the pressure taps. With only eight taps on the upper surface and six on the lower, the trapezoidal integration misses a large fraction of the suction peak that concentrates near the leading edge (\( x/c \lesssim 0.05 \)) as the angle of attack increases. Since lift is dominated by this leading-edge suction, the integrated \( C_L \) grows more slowly with \( \alpha \) than the true value, flattening the lift curve. This effect is compounded by three-dimensional tunnel effects (wall interference, finite aspect ratio corrections) and any small misalignment between the model chord line and the prescribed angle of attack.
+
+Despite the quantitative discrepancy, the qualitative behaviour is physically consistent: the lift curve is linear over the attached-flow regime, the zero-lift angle is in the correct range for a positively cambered airfoil, and the curve peaks and then falls at high angle of attack in a manner recognisable as leading-edge stall.
 
 \subsection{Experimental Drag Polar vs. Published NACA Data} \label{sec:analysis/drag-polar-vs-naca}
 
-% TODO:
-% Compare your drag polar with published NACA data. Do you capture the same trends? Are there any regions where they disagree? Explain any discrepancies.
+Table~\ref{tab:cd_comparison} compares the experimental pressure drag coefficient with both the total drag coefficient (\( C_d \)) and the pressure drag coefficient (\( C_{d,p} \)) reported by XFoil at matched angles of attack.
 
-%FIXME: fill in section
-\lipsum[1-2]
+\begin{table}[h]
+    \centering
+    \begin{tabular}{cccc}
+        \hline
+        \boldmath\( \alpha \) \textbf{(deg)}
+  & \textbf{Exp.\ } \boldmath\( C_D \)
+  & \textbf{XFoil } \boldmath\( C_{d,p} \)
+  & \textbf{XFoil } \boldmath\( C_d \) \textbf{(total)} \\
+  \hline
+        \phantom{+}0  & \num{0.0033}  & \num{0.00141} & \num{0.00678} \\
+        \phantom{+}2  & \num{0.0287}  & \num{0.00192} & \num{0.00622} \\
+        \phantom{+}4  & \num{0.0668}  & \num{0.00260} & \num{0.00722} \\
+        \phantom{+}6  & \num{0.1145}  & \num{0.00379} & \num{0.00884} \\
+        \phantom{+}8  & \num{0.1544}  & \num{0.00672} & \num{0.01288} \\
+        \num{10}      & \num{0.1836}  & \num{0.01091} & \num{0.01746} \\
+        \hline
+    \end{tabular}
+    \caption{Drag coefficient comparison at positive angles of attack. The XFoil total drag \( C_d \) includes both pressure and skin-friction contributions; \( C_{d,p} \) is the pressure drag component only.}
+    \label{tab:cd_comparison}
+\end{table}
+
+At \( \alpha = 0\si{\degree} \), the experimental \( C_D \) of \num{0.0033} is larger than the XFoil pressure drag of \num{0.00141} but smaller than the XFoil total drag of \num{0.00678}. This is physically consistent: skin friction (approximately \num{0.00448} at \( \alpha = 0\si{\degree} \)) is not captured by the surface pressure taps, so the experimental result should lie between the two XFoil bounds in the attached-flow regime, which it does.
+
+At positive angles above \SI{2}{\degree}, however, the experimental \( C_D \) grows far more rapidly than either XFoil prediction, reaching \num{0.1836} at \( \alpha = 10\si{\degree} \) compared to a total XFoil drag of only \num{0.01746}. This divergence is consistent with the prematurely low stall angle identified in Section~\ref{sec:analysis/CL-vs-naca}: once the flow is separating over the upper surface --- which the data suggests begins as early as \( \alpha \approx 8\si{\degree} \) for this experiment --- the pressure on the upper surface downstream of the separation point rises toward the freestream value, greatly increasing the pressure drag component. The XFoil simulation, which remains attached to \SI{16}{\degree}, does not capture this effect.
+
+At low angles of attack (\( -4\si{\degree} \leq \alpha \leq 4\si{\degree} \)), both polars show the characteristic low-drag bucket of a well-designed airfoil, and the trends agree qualitatively. The quantitative offset is attributable to the absence of skin friction in the experimental measurement and to the resolution limitations discussed above. Overall, while the absolute magnitudes differ substantially, the experiment correctly captures the rapid drag rise associated with flow separation, which is the most aerodynamically significant feature of the drag polar in a practical context.
 
 \section{Summary and Conclusions} \label{sec:summary}
 
-%FIXME: fill in section
-\lipsum[1-2]
+This experiment investigated the pressure distribution, lift, and pressure drag on a NACA~4412 airfoil model in a low-speed wind tunnel at \( Re \approx 6.58 \times 10^{5} \). Surface pressures were measured at fourteen tap locations across \( -20\si{\degree} \leq \alpha \leq 20\si{\degree} \) and integrated numerically to yield aerodynamic force coefficients. The principal findings are as follows.
+
+\textbf{Freestream conditions.} The mean dynamic pressure derived from the pitot-static system was \( q_{\infty} = \SI{629.15}{\pascal} \), consistent to within \SI{3}{\percent} across all angles of attack, confirming a stable tunnel speed of \( U_{\infty} = \SI{32.05}{\metre\per\second} \) and a chord Reynolds number of \( Re = 6.58 \times 10^{5} \).
+
+\textbf{Pressure distributions.} The \( C_p \) distributions behaved as expected for a cambered airfoil in the attached-flow regime: the upper surface exhibited a broad suction region that intensified and migrated toward the leading edge with increasing incidence, while the lower surface remained near or above freestream pressure. At angles of attack beyond \( \alpha \approx 8\si{\degree} \), the upper-surface suction collapsed abruptly, consistent with the onset of leading-edge flow separation.
+
+\textbf{Lift and stall.} The experimental lift curve was approximately linear in the range \( -4\si{\degree} \leq \alpha \leq 6\si{\degree} \), with a slope of \SI{0.040}{\per\degree}. The maximum lift coefficient was \( C_{L,\text{max}} = 0.527 \), reached at \( \alpha_s = \SI{8}{\degree} \). Both values are substantially below the XFoil prediction of \( C_{L,\text{max}} = 1.671 \) at \( \alpha_s = \SI{16.25}{\degree} \). The deficit is attributed to the inability of the coarse tap array to resolve the narrow leading-edge suction peak, which causes the trapezoidal integration to underestimate the true normal force, and to the lower experimental Reynolds number, which promotes earlier laminar separation relative to the \( Re = 1 \times 10^{6} \) reference polar.
+
+\textbf{Drag polar.} The experimental pressure drag coefficient was physically consistent at low incidence: at \( \alpha = 0\si{\degree} \) it fell between the XFoil pressure-only drag (\num{0.00141}) and total drag (\num{0.00678}), as expected given that skin friction is not captured by surface pressure taps alone. Above \( \alpha \approx 2\si{\degree} \), the experimental \( C_D \) rose far more steeply than the XFoil prediction --- reaching \num{0.184} at \( \alpha = 10\si{\degree} \) against an XFoil total of \num{0.017} --- consistent with premature pressure-drag rise due to early flow separation on the upper surface.
+
+\textbf{Broader considerations.} The experiment demonstrates that pressure-tap integration is a reliable technique for estimating aerodynamic forces under attached-flow conditions, but that its accuracy degrades significantly near and beyond stall, where flow separation produces large pressure gradients between taps that the trapezoidal rule cannot faithfully capture. Future work should consider a denser tap distribution near the leading edge (\( x/c < 0.05 \)) to improve resolution of the suction peak, and a direct force balance measurement to provide an independent check on the pressure-integrated results and to recover the skin-friction contribution to drag. Measurements at a Reynolds number closer to \( 1 \times 10^{6} \) would also reduce the discrepancy with the published polar and allow a more direct validation of the XFoil prediction.
 
 \section{References} \label{sec:references}
 
@@ -261,28 +492,30 @@ Thus, \textbf{the ambient air density during the experiment is}:
     \centering
     \caption{Raw Measurements of Pressure Taps vs. Angle of Attack}
     \mintinline{bash}{./data/pressure_taps_vs_aoa.csv} \\
-    % \begin{tabular}[c]{|r|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|}\hline
-    %     % & \( \theta \, \left[\unit{\deg}\right] \) & \( P_{\infty} \, \left[\unit{\cm}\right] \) & \( P_{0} \, \left[\unit{\cm}\right] \) & \( P \, \left[\unit{\cm}\right] \) \\ \hline \hline
-    %     \csvreader[late after line = \\ \hline]{../data/pressure_taps_vs_aoa.csv}{}{
-    %         \csvcoli &
-    %         \csvcolii &
-    %         \csvcoliii &
-    %         \csvcoliv &
-    %         \csvcolv &
-    %         \csvcolvi &
-    %         \csvcolvii &
-    %         \csvcolviii &
-    %         \csvcolix &
-    %         \csvcolx &
-    %         \csvcolxi &
-    %         \csvcolxii &
-    %         \csvcolxiii &
-    %         \csvcolxiv &
-    %         \csvcolxv &
-    %         \csvcolxvi &
-    %         \csvcolxvii
-    %     }
-    % \end{tabular}
+    % \begin{adjustbox}{max width=\textwidth}
+    %     \begin{tabular}[c]{|r|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|}\hline
+    %         AoA \( \left(\alpha\right) \) & Channel 1 & Channel 2 & Channel 3 & Channel 4 & Channel 5 & Channel 6 & Channel 7 & Channel 8 & Channel 9 & Channel 10 & Channel 11 & Channel 12 & Channel 13 & Channel 14 & Channel 15 & Channel 16 \\ \hline \hline
+    %         \csvreader[late after line = \\ \hline]{../data/pressure_taps_vs_aoa.csv}{}{
+    %             \csvcoli &
+    %             \csvcolii &
+    %             \csvcoliii &
+    %             \csvcoliv &
+    %             \csvcolv &
+    %             \csvcolvi &
+    %             \csvcolvii &
+    %             \csvcolviii &
+    %             \csvcolix &
+    %             \csvcolx &
+    %             \csvcolxi &
+    %             \csvcolxii &
+    %             \csvcolxiii &
+    %             \csvcolxiv &
+    %             \csvcolxv &
+    %             \csvcolxvi &
+    %             \csvcolxvii
+    %         }
+    %     \end{tabular}
+    % \end{adjustbox}
     \label{tab:data/pressure}
 \end{table}
 \inputminted{text}{../data/pressure_taps_vs_aoa.csv}

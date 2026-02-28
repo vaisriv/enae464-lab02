@@ -100,6 +100,7 @@ perSystem.devshell.mkShell {
         (python3.withPackages (ps:
             with ps; [
                 # python packages here
+                pandas
                 matplotlib
                 numpy
                 scipy
